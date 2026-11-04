@@ -2,6 +2,9 @@
   "name": "cors-proxy",
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": "26.x"
+  },
   "description": "CORS proxy",
   "author": "Bengt Brodersen",
   "license": "MIT",
