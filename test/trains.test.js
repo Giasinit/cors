@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import https from 'node:https';
 import { EventEmitter } from 'node:events';
-import { Readable } from 'node:stream';
 import { X509Certificate } from 'node:crypto';
 import { mock, test } from 'node:test';
+import requestClient from 'request';
 import { createApp } from '../api/index.js';
 import { prepareCalendar, selectActive } from '../lib/train-calendar.js';
 import { collectTrains, compactTrain, fetchTrain, TrainError } from '../lib/train-realtime.js';
@@ -31,32 +30,25 @@ function calendar(rows = [['757', 0, 86399, 0]]) {
 
 test('detail transport calls RFI directly with verified TLS, no proxy hop and no caller headers', async () => {
   let calls = 0;
-  const request = mock.method(https, 'request', (target, options, callback) => {
+  const request = mock.method(requestClient, 'post', (options, callback) => {
     calls++;
-    const url = new URL(target);
+    const url = new URL(options.url);
     assert.equal(url.hostname, 'salabluplus.rfi.it');
     assert.equal(url.port, '8443');
     assert.equal(url.pathname, '/pic/v2/GetTrainDetailsWtime');
     assert.equal(url.search, '');
-    assert.equal(options.method, 'POST');
-    assert.equal(options.rejectUnauthorized, true);
+    assert.equal(options.strictSSL, true);
     assert.equal(options.agent.options.rejectUnauthorized, true);
     assert.equal(options.agent.maxSockets, Infinity);
     assert.equal(options.agent.maxTotalSockets, Infinity);
+    assert.equal(options.agent.keepAlive, false);
     assert.ok(options.agent.options.ca.some(pem => new X509Certificate(pem).subject
       .includes('DigiCert Global G2 TLS RSA SHA256 2020 CA1')));
     assert.deepEqual(Object.keys(options.headers).sort(), ['Content-Length', 'Content-Type']);
     const req = new EventEmitter();
-    req.end = body => {
-      assert.deepEqual(JSON.parse(body), { trainNumber: '757',
+    assert.deepEqual(JSON.parse(options.body), { trainNumber: '757',
         timeGMT: '2026-11-04T00:00:00%2B00:00', timeUTC: '2026-11-04T00:00:00.000Z' });
-      queueMicrotask(() => {
-        const response = Readable.from([Buffer.from(JSON.stringify(detail()))]);
-        response.statusCode = 200;
-        callback(response);
-        response.on('end', () => req.emit('close'));
-      });
-    };
+    queueMicrotask(() => callback(null, { statusCode: 200 }, JSON.stringify(detail())));
     return req;
   });
   try {
@@ -72,6 +64,19 @@ test('calendar honors exact date bits, time window, filtering and duplicate vari
   assert.equal(selectActive(c, new Date('2026-11-05T12:00:00Z')).length, 0);
   assert.equal(selectActive(c, now, { numbers: new Set(['2']) }).length, 0);
   assert.throws(() => selectActive(c, new Date('2028-01-01T00:00:00Z')), /Calendar valid/);
+});
+
+test('direct RFI transport times out and aborts a stalled request', async () => {
+  let aborted = 0;
+  const transport = mock.method(requestClient, 'post', () => {
+    const req = new EventEmitter();
+    req.abort = () => { aborted++; };
+    return req;
+  });
+  try {
+    await assert.rejects(fetchTrain(entry, '2026-11-04', { timeoutMs: 5 }), e => e.code === 'UPSTREAM_TIMEOUT');
+    assert.equal(aborted, 1);
+  } finally { transport.mock.restore(); }
 });
 
 test('night trains retain yesterday origin date; grace is explicit', () => {
