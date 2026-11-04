@@ -10,7 +10,8 @@
   "license": "MIT",
   "scripts": {
     "start": "vercel dev",
-    "test": "node --test"
+    "test": "node --test",
+    "build:calendar": "python3 scripts/compile_calendar.py"
   },
   "repository": {
     "type": "git",

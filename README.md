@@ -1,5 +1,89 @@
 # Vercel CORS Proxy
 
+## National train snapshot: `/gettrain`
+
+`GET https://cors.giaflix.net/gettrain` selects every train currently within its
+scheduled operating window and looks them all up concurrently. There is **no
+application concurrency cap, queue, batching, retry or cache**. If 1,000 dated
+trains are selected, 1,000 promises start without waiting for earlier responses;
+the HTTPS agent also has unlimited `maxSockets`/`maxTotalSockets`. Platform and
+upstream limits still apply and failures are returned per train.
+
+Every detail lookup is a POST through `https://cors.giaflix.net/?url=…`, not a
+direct RFI connection from the caller. The collector creates fresh outbound
+headers and the generic proxy strips caller-IP/forwarding/platform headers.
+Proxy providers still receive the caller's connection; this is not an anonymity
+or GDPR compliance claim.
+
+The bundled calendar is compiled from `IT-IT-TRENITALIA_L1.xml` (publication
+2026-10-29, SHA-256
+`1bd846e3bb25c1722824087be3ce0fc02b466c0aa4218a1055eaf24ed0586326`).
+The 442,623,139-byte XML becomes a 114,461-byte gzip: 9,367 public train numbers,
+14,546 distinct operating windows and 1,761 shared date bitsets. The validity
+range is **2026-10-31 through 2027-12-11**. The original XML is not deployed.
+3,045 non-rail journeys are excluded. The importer resolves DayType assignments,
+weekdays, UIC date bits and explicit date exceptions, and retains day offsets for
+overnight trains. Duplicate variants of the same public number/origin date use
+one lookup. Selection uses the civil clock in `Europe/Rome`, including midnight
+and DST changes. The filename does not identify a live feed: regenerate the
+calendar when a new timetable is available.
+
+Small test requests:
+
+```text
+/gettrain?mode=schedule              # Calendar selection only: zero RFI calls
+/gettrain?limit=3                    # At most three simultaneous lookups
+/gettrain?numbers=3496,8418,9425      # Only these numbers, if scheduled now
+/gettrain?after=180                  # Also retain trains up to 180 min past scheduled end
+```
+
+The default has no `limit` and `after=0`. Eligibility is scheduled activity, not
+proof of actual circulation. A train delayed beyond its scheduled end requires
+an explicit `after` window. Unsupported dates return HTTP 409. Bad parameters
+return HTTP 400. `HEAD /gettrain` returns 405 without starting any lookups.
+`/get-train` is an alias. Calls perform one snapshot, not a background polling
+loop; repeated calls start independent snapshots.
+
+Responses contain `startedAt`, `completedAt`, `elapsedMs`, calendar provenance,
+`active` (after any number filter), `selected`, summary counts and a compact
+`trains` array. Each row identifies `number` and `serviceDate` (origin date):
+
+- `rt: true`: completed arrival/departure flags or a numeric delay, including
+  explicit zero, provide realtime evidence in this response.
+- `rt: false`: no such evidence; `rt: null` means the lookup failed.
+- `last`: the last completed event in path order, with its **PIC place ID** and
+  arrival/departure kind. It is not a GPS location. `PlaceDescription` on an
+  Arrival/Departure describes an origin/destination, so it is not used as the
+  current station name.
+- `last.scheduledTime`: timetable time of that event.
+- `last.estimatedTime`: scheduled time plus numeric delay, explicitly an
+  estimate, **not an observed detection timestamp**. It is null when the delay
+  is absent; missing delay never means zero. Both timezone offsets and UTC
+  timestamps identify instants.
+- `checkedAt`: when that response was processed, not when the train was detected.
+- `error`: bounded `code`, optional upstream `status`, and `message`; no full
+  upstream response, timetable path or stack trace is returned.
+
+The POST uses the current Rome query date and verifies the returned public
+number and origin date. It never manufactures a PIC ID from a public number.
+Wrong-date/ambiguous results are errors. Each lookup has a 24-second deadline;
+the snapshot completes after all selected lookups settle. No guarantee that
+every selected train succeeds, or that source data is two seconds old, is made.
+The handler emits no per-train console logs.
+
+Rebuild the small bundled calendar locally:
+
+```sh
+npm run build:calendar -- ~/Downloads/IT-IT-TRENITALIA_L1.xml
+python3 -m unittest discover -s test -p 'test_*.py'
+```
+
+`npm test` includes an isolated concurrency check that starts 1,000 pending
+lookups before resolving any. That check makes **zero external requests**;
+live smoke tests use explicitly small selections.
+
+## Generic proxy
+
 Pass the target URL as the final `url` query parameter. Both the legacy raw URL
 and `encodeURIComponent(targetUrl)` work. The proxy forwards the HTTP method,
 request body, response status and body; `OPTIONS` preflight is answered locally.

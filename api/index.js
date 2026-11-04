@@ -4,6 +4,7 @@ import { rootCertificates } from 'node:tls';
 import express from 'express';
 import cors from 'cors';
 import request from 'request';
+import { createGetTrain } from '../lib/gettrain.js';
 
 // The server omits its public intermediate. Complete the chain without disabling TLS checks.
 const salaBluAuthorities = [
@@ -15,14 +16,15 @@ const hopByHop = new Set([
   'te', 'trailer', 'transfer-encoding', 'upgrade',
 ]);
 
-function forwardedHeaders(headers) {
+function forwardedHeaders(headers, stripCallerIdentity = false) {
   const excluded = new Set(hopByHop);
   for (const name of (headers.connection || '').split(',')) {
     excluded.add(name.trim().toLowerCase());
   }
   excluded.add('host');
   return Object.fromEntries(Object.entries(headers).filter(([name]) =>
-    !excluded.has(name.toLowerCase()) && !name.toLowerCase().startsWith('access-control-')));
+    !excluded.has(name.toLowerCase()) && !name.toLowerCase().startsWith('access-control-')
+    && !(stripCallerIdentity && /^(?:forwarded|via|x-real-ip|true-client-ip|client-ip|x-client-ip|x-cluster-client-ip|x-original-forwarded-for|fastly-client-ip|x-forwarded-.*|x-vercel-.*|cf-.*)$/i.test(name))));
 }
 
 function parseTarget(req) {
@@ -36,10 +38,13 @@ function parseTarget(req) {
   return target;
 }
 
-export function createApp({ upstreamTimeoutMs = 25_000 } = {}) {
+export function createApp({ upstreamTimeoutMs = 25_000, getTrainOptions } = {}) {
   const app = express();
   app.use(cors({ exposedHeaders: ['X-Proxy-Upstream-Ms'] }));
   app.set('json spaces', 2);
+
+  app.head(['/gettrain', '/get-train'], (req, res) => res.set('Allow', 'GET').status(405).end());
+  app.get(['/gettrain', '/get-train'], createGetTrain(getTrainOptions));
 
   app.all('/*', (req, res) => {
     let target;
@@ -49,7 +54,7 @@ export function createApp({ upstreamTimeoutMs = 25_000 } = {}) {
       return res.status(400).json({ title: 'CORS Proxy Error', detail: error.message });
     }
 
-    const headers = forwardedHeaders(req.headers);
+    const headers = forwardedHeaders(req.headers, true);
     // Vercel may already have consumed the stream and parsed req.body.
     let body;
     if (req.body !== undefined) {

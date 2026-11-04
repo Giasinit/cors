@@ -84,6 +84,21 @@ test('POST streams the exact JSON body, content type and Accept to the destinati
   assert.equal(data.headers.accept, 'application/json');
 });
 
+test('caller IP and proxy infrastructure headers are not disclosed upstream', async () => {
+  const response = await fetch(`${proxyBase}/?url=${targetBase}/echo`, {
+    headers: {
+      Forwarded: 'for=192.0.2.10', 'X-Forwarded-For': '192.0.2.10', 'X-Real-IP': '192.0.2.10',
+      'CF-Connecting-IP': '192.0.2.10', 'True-Client-IP': '192.0.2.10',
+      'X-Vercel-Forwarded-For': '192.0.2.10', 'X-Forwarded-Host': 'private.example',
+      Authorization: 'Bearer test-fixture',
+    },
+  });
+  const data = await response.json();
+  for (const name of ['forwarded', 'x-forwarded-for', 'x-real-ip', 'cf-connecting-ip',
+    'true-client-ip', 'x-vercel-forwarded-for', 'x-forwarded-host']) assert.equal(data.headers[name], undefined);
+  assert.equal(data.headers.authorization, 'Bearer test-fixture');
+});
+
 test('POST also forwards Vercel-style parsed JSON with a correct byte length', async () => {
   const value = { nome: 'Città', trainNumber: '757' };
   const response = await fetch(`${parsedBase}/?url=${targetBase}/echo`, {

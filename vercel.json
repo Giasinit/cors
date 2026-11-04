@@ -2,7 +2,7 @@
   "functions": {
     "api/index.js": {
       "maxDuration": 30,
-      "includeFiles": "certificates/*.pem"
+      "includeFiles": "{certificates/*.pem,data/*.json.gz}"
     }
   },
   "rewrites": [
