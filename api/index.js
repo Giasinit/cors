@@ -4,6 +4,7 @@ import cors from 'cors';
 import request from 'request';
 import { createGetTrain } from '../lib/gettrain.js';
 import { salaBluAuthorities } from '../lib/salablu-tls.js';
+import { rfiProtocolHandler } from '../lib/rfi-protocol.js';
 const hopByHop = new Set([
   'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
   'te', 'trailer', 'transfer-encoding', 'upgrade',
@@ -35,6 +36,9 @@ export function createApp({ upstreamTimeoutMs = 25_000, getTrainOptions } = {}) 
   const app = express();
   app.use(cors({ exposedHeaders: ['X-Proxy-Upstream-Ms'] }));
   app.set('json spaces', 2);
+
+  app.head('/rfi-protocol', (req, res) => res.set('Allow', 'GET').status(405).end());
+  app.get('/rfi-protocol', rfiProtocolHandler);
 
   app.head(['/gettrain', '/get-train'], (req, res) => res.set('Allow', 'GET').status(405).end());
   app.get(['/gettrain', '/get-train'], createGetTrain(getTrainOptions));

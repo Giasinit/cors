@@ -1,5 +1,13 @@
 # Vercel CORS Proxy
 
+`GET /rfi-protocol` performs one verified TLS handshake from Vercel to the fixed
+SalaBlu+ host on port 8443, offering ALPN `h2` and `http/1.1`. It returns the
+negotiated protocol (null if none), with an eight-second deadline, and closes
+without sending an HTTP/train request. The caller cannot change the destination.
+This measures the **Vercel → RFI** leg; HTTP/2 on the caller → Vercel leg is
+independent. Both existing train transports (`request` and native `https.request`)
+use HTTP/1.1 and are unaffected by this diagnostic.
+
 ## National train snapshot: `/gettrain`
 
 `GET https://cors.giaflix.net/gettrain` selects every train currently within its
