@@ -10,7 +10,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 REV = "2d495aca5b233bec0a5334dc4aa3cbdaef6e1bc5"
-OUT = ROOT / "internal/bombardier/assets"
+OUT = ROOT / "benchmark/assets"
 OUT.mkdir(parents=True, exist_ok=True)
 with tempfile.TemporaryDirectory(prefix="cors-bombardier-build-") as tmp:
     source = Path(tmp) / "source"

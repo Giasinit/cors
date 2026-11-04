@@ -48,12 +48,12 @@ Rebuild the bundled, checksum-verified Linux amd64/arm64 executables with
 `python3 scripts/build_bombardier.py` (requires Git, Go and network access to
 GitHub/Go dependencies). This also builds `.vercel/bombardier-local` for local
 integration tests. Source revision, toolchain, hashes and upstream MIT license
-are in `internal/bombardier/assets/`. The root Go module is standard-library only.
-Run `go test -count=1 ./...` after rebuilding to exercise the **real executable**
+are in `benchmark/assets/`. The benchmark Go module is standard-library only.
+Run `go -C benchmark test -count=1 ./...` after rebuilding to exercise the **real executable**
 against loopback HTTP/TLS fixtures, without contacting RFI.
-The npm `postinstall` step creates `node_modules/go.mod` as a module boundary:
-Vercel's generated Go bridge must not scan Go sources inside npm dependencies.
-Node is used for that build step and the existing proxy, not for `/bombardier`.
+The function module lives in `api/go.mod` and imports `../benchmark` through a
+local module replacement. Its module root is below the project's `node_modules`,
+so Vercel's generated Go bridge cannot scan Go files shipped by npm packages.
 
 `GET /rfi-protocol` performs one verified TLS handshake from Vercel to the fixed
 SalaBlu+ host on port 8443, offering ALPN `h2` and `http/1.1`. It returns the

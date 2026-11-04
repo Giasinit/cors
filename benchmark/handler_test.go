@@ -17,7 +17,7 @@ import (
 
 func localBinary(t *testing.T) func() (string, error) {
 	t.Helper()
-	path, err := filepath.Abs("../../.vercel/bombardier-local")
+	path, err := filepath.Abs("../.vercel/bombardier-local")
 	if err != nil {
 		t.Fatal(err)
 	}

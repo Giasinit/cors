@@ -15,8 +15,6 @@ import (
 	"strings"
 	"time"
 	_ "time/tzdata"
-
-	"github.com/Giasinit/cors/certificates"
 )
 
 const detailURL = "https://salabluplus.rfi.it:8443/pic/v2/GetTrainDetailsWtime"
@@ -161,7 +159,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer os.RemoveAll(directory)
 	ca := h.CA
 	if ca == nil {
-		ca = certificates.SalaBluIntermediate
+		ca, _ = assets.ReadFile("assets/rfi-ca.pem")
 	}
 	caFile := filepath.Join(directory, "rfi-ca.pem")
 	if err = os.WriteFile(caFile, ca, 0600); err != nil {

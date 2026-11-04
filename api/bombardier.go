@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"github.com/Giasinit/cors/internal/bombardier"
+	"github.com/Giasinit/cors/benchmark"
 	"net/http"
 )
 
