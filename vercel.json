@@ -1,19 +1,23 @@
 { 
-  "functions": {
-    "api/bombardier.go": {
-      "maxDuration": 30
-    },
-    "api/index.js": {
-      "maxDuration": 30,
-      "includeFiles": "{certificates/*.pem,data/*.json.gz}"
-    }
-  },
+  "version": 2,
+  "builds": [
+    { "src": "api/index.js", "use": "@vercel/node", "config": {
+      "includeFiles": "{certificates/*.pem,data/*.json.gz}",
+      "functions": { "api/index.js": { "maxDuration": 30 } }
+    } },
+    { "src": "stream/main.go", "use": "@vercel/go", "config": {
+      "framework": "go",
+      "buildCommand": "go -C stream build -o \"$VERCEL_OUTPUT_FILE\" .",
+      "functions": { "stream/main.go": { "maxDuration": 30 } }
+    } }
+  ],
   "rewrites": [
-    { "source": "/gettrain", "has": [{ "type": "query", "key": "transport", "value": "bombardier" }], "destination": "/api/bombardier?collector=1" },
-    { "source": "/get-train", "has": [{ "type": "query", "key": "transport", "value": "bombardier" }], "destination": "/api/bombardier?collector=1" },
-    { "source": "/gettrain-go/schedule", "destination": "/api/bombardier?collector=1&mode=schedule" },
-    { "source": "/gettrain-go", "destination": "/api/bombardier?collector=1" },
-    { "source": "/bombardier", "destination": "/api/bombardier" },
-    { "source": "/(.*)", "destination": "/api" }
+    { "source": "/gettrain", "has": [{ "type": "query", "key": "transport", "value": "bombardier" }], "destination": "/go?collector=1" },
+    { "source": "/get-train", "has": [{ "type": "query", "key": "transport", "value": "bombardier" }], "destination": "/go?collector=1" },
+    { "source": "/gettrain-go/schedule", "destination": "/go?collector=1&mode=schedule" },
+    { "source": "/gettrain-go", "destination": "/go?collector=1" },
+    { "source": "/bombardier", "destination": "/go" },
+    { "source": "/api/bombardier", "destination": "/go" },
+    { "source": "/(.*)", "destination": "/api/index.js" }
   ]
 }

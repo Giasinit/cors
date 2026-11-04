@@ -2,6 +2,7 @@ package bombardier
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,25 @@ import (
 	"testing"
 	"time"
 )
+
+type bufferedRuntimeWriter struct {
+	headers http.Header
+	status  int
+	body    bytes.Buffer
+}
+
+func (w *bufferedRuntimeWriter) Header() http.Header           { return w.headers }
+func (w *bufferedRuntimeWriter) WriteHeader(status int)        { w.status = status }
+func (w *bufferedRuntimeWriter) Write(raw []byte) (int, error) { return w.body.Write(raw) }
+
+func TestBufferedRuntimeRejectsSSEBeforeCalendarOrProcess(t *testing.T) {
+	h := CollectorHandler{Binary: func() (string, error) { t.Fatal("unexpected executable"); return "", nil }, Calendar: func() (*trainCalendar, error) { t.Fatal("unexpected calendar"); return nil, nil }}
+	w := &bufferedRuntimeWriter{headers: make(http.Header)}
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/gettrain?stream=1", nil))
+	if w.status != 501 || !strings.Contains(w.body.String(), "STREAMING_UNAVAILABLE") || strings.Contains(w.body.String(), "event: start") {
+		t.Fatal(w.status, w.body.String())
+	}
+}
 
 var fixtureNow = time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
 
@@ -235,7 +255,7 @@ func TestCollectorPreservesHTTPInvalidJSONDateAndNumberErrors(t *testing.T) {
 		switch body["trainNumber"] {
 		case "1":
 			w.WriteHeader(500)
-			io.WriteString(w, "Policy Falsified")
+			io.WriteString(w, "<fault><faultstring>Policy Falsified</faultstring></fault>")
 		case "2":
 			io.WriteString(w, "not json")
 		case "3":
@@ -266,6 +286,9 @@ func TestCollectorPreservesHTTPInvalidJSONDateAndNumberErrors(t *testing.T) {
 	}
 	if data.Trains[0].Error.Status != 500 || data.Trains[4].Error != nil {
 		t.Fatal(data)
+	}
+	if data.Trains[0].Error.Message != "Policy Falsified" {
+		t.Fatal(data.Trains[0].Error)
 	}
 }
 

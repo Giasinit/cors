@@ -12,6 +12,12 @@ Vercel routes these requests **directly to the Go Function**, before the Node
 catch-all. `/gettrain-go` is an alias. `/gettrain-go/schedule?limit=3` only lists
 eligible trains and never queries RFI. Existing Node transports remain available
 under their existing URLs; the new transport is explicitly `bombardier`.
+The collector runs through Vercel's **standalone Go HTTP server** builder with
+response streaming enabled, not the legacy buffered `go-bridge` function adapter.
+That adapter cannot flush SSE; the handler now rejects unsupported writers with
+501 before starting any lookups. `stream/main.go` fronts the same Go handler used
+for both collection and the original `/bombardier` benchmark. The explicit
+builders preserve the separate Node proxy and its bundled calendar/CA files.
 
 This collector embeds the same compiled calendar and ports the existing Node
 selection and compact-response rules. `limit`, `numbers`, `after` (0–1440 min),

@@ -39,6 +39,23 @@ type collectorOptions struct {
 
 var unsignedPattern = regexp.MustCompile(`^\d+$`)
 var numbersPattern = regexp.MustCompile(`^\d+(?:,\d+)*$`)
+var faultStringPattern = regexp.MustCompile(`<faultstring>([^<]*)</faultstring>`)
+
+func supportsFlush(w http.ResponseWriter) bool {
+	for depth := 0; depth < 16; depth++ {
+		switch writer := w.(type) {
+		case interface{ FlushError() error }:
+			return true
+		case http.Flusher:
+			return true
+		case interface{ Unwrap() http.ResponseWriter }:
+			w = writer.Unwrap()
+		default:
+			return false
+		}
+	}
+	return false
+}
 
 func parseCollectorQuery(q url.Values, accept string) (collectorOptions, error) {
 	o := collectorOptions{Mode: "live", Client: "fasthttp", Limit: int(^uint(0) >> 1)}
@@ -162,6 +179,10 @@ func (h CollectorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(204)
 		return
 	}
+	if options.Stream && !supportsFlush(w) {
+		reply(w, 501, map[string]string{"error": "STREAMING_UNAVAILABLE", "message": "This runtime cannot flush SSE; use the standalone Go runtime"})
+		return
+	}
 	clock := h.Clock
 	if clock == nil {
 		clock = time.Now
@@ -280,7 +301,14 @@ func (h CollectorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					}
 					fault = &trainFault{Code: code, Message: frame.Error}
 				case frame.Status != 200:
-					fault = &trainFault{Code: "UPSTREAM_HTTP", Status: frame.Status, Message: string(frame.Body)}
+					message := string(frame.Body)
+					if match := faultStringPattern.FindStringSubmatch(message); len(match) > 1 && match[1] != "" {
+						message = match[1]
+					}
+					if message == "" {
+						message = "Upstream request failed"
+					}
+					fault = &trainFault{Code: "UPSTREAM_HTTP", Status: frame.Status, Message: message}
 				default:
 					row, fault = compactTrainBody(frame.Body, entry, clock())
 				}
