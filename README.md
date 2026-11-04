@@ -73,6 +73,70 @@ the snapshot completes after all selected lookups settle. No guarantee that
 every selected train succeeds, or that source data is two seconds old, is made.
 The handler emits no per-train console logs.
 
+### Results as they arrive: SSE
+
+```sh
+curl -N 'https://cors.giaflix.net/gettrain?stream=1&limit=10'
+```
+
+Use `stream=1` or `Accept: text/event-stream`. Existing `numbers`, `limit` and
+`after` filters apply. The default response is still JSON; add `diagnostics=1`
+to include the same network measurements in a JSON response. SSE is live-only;
+`mode=schedule&stream=1` is rejected without starting lookups.
+
+This is **one finite batch**, not continuous polling. Every selected lookup
+still starts concurrently, with no retries or extra proxy hop. SSE delivers
+completed rows early; it does not make RFI respond faster.
+
+| Event | Payload |
+| --- | --- |
+| `start` | Calendar/run metadata and selected train numbers/service dates, sent before lookups finish. |
+| `train` | One compact result or per-train error, `diagnostics`, `completed`, `remaining`; completion order. |
+| `progress` | Every 3 seconds: pending trains, current phases and elapsed times. |
+| `done` | Final counts, elapsed time and zero remaining; the connection closes. |
+| `fatal` | Unexpected stream failure; the connection closes. |
+
+The client should close its `EventSource` on `done`, `fatal` **and connection
+error**, rather than automatically repeating a failed batch. Events have IDs;
+reconnections carrying `Last-Event-ID` receive HTTP 204 and perform no lookups
+because this endpoint does not retain/replay past events. A new connection
+without that header starts a new batch. Disconnecting aborts pending upstream
+requests. Slow clients exceeding a 1 MiB output buffer are disconnected and
+their pending lookups cancelled. Responses disable caching/transformation and
+request proxy buffering to be disabled.
+
+```js
+const source = new EventSource('https://cors.giaflix.net/gettrain?stream=1&limit=10');
+source.addEventListener('train', event => {
+  const train = JSON.parse(event.data);
+  console.log(train.number, train.error || train.last, train.diagnostics);
+});
+source.addEventListener('progress', event => console.log('Pending:', JSON.parse(event.data).pending));
+source.addEventListener('done', event => { console.log(JSON.parse(event.data)); source.close(); });
+source.addEventListener('fatal', event => { console.error(event.data); source.close(); });
+source.onerror = () => source.close();
+```
+
+`diagnostics.phase` identifies the observed wait: `socket`, `dns`, `tcp`, `tls`,
+`request_send`, `response_headers`, `response_body`, or `complete`. An injected
+lookup without transport observations reports `unknown` instead of inventing
+network timings. `elapsedMs`/`phaseElapsedMs` are monotonic elapsed times.
+`milestonesMs` are offsets from that lookup's start; `durationsMs` are differences
+between observed milestones, with unobserved/incomplete phases **null**. DNS is
+null for a direct IP connection, not assumed zero. `bytesReceived`, optional
+`upstreamStatus`, native `causeCode` and `timeoutKind` help distinguish failures.
+`outcome` describes the transport/JSON exchange; a valid exchange can still
+produce a compact-result error such as `TRAIN_NOT_FOUND` or `SERVICE_DATE_MISMATCH`.
+
+A timeout while `response_headers` means the client sent the request but did
+not observe HTTP response headers before the deadline. It does **not** locate
+the delay inside RFI's gateway/database/backend. `response_body` means headers
+arrived and the exchange did not complete. `tls` includes certificate validation.
+Request `finish` means data was handed to the operating system, not proof that
+RFI processed it. No upstream credentials, full headers, caller IPs or stack
+traces are included. Diagnostics do not follow redirects, so a redirect is an
+`UPSTREAM_HTTP` result rather than an unmeasured second exchange.
+
 Rebuild the small bundled calendar locally:
 
 ```sh
