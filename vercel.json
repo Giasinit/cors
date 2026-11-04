@@ -9,6 +9,10 @@
     }
   },
   "rewrites": [
+    { "source": "/gettrain", "has": [{ "type": "query", "key": "transport", "value": "bombardier" }], "destination": "/api/bombardier?collector=1" },
+    { "source": "/get-train", "has": [{ "type": "query", "key": "transport", "value": "bombardier" }], "destination": "/api/bombardier?collector=1" },
+    { "source": "/gettrain-go/schedule", "destination": "/api/bombardier?collector=1&mode=schedule" },
+    { "source": "/gettrain-go", "destination": "/api/bombardier?collector=1" },
     { "source": "/bombardier", "destination": "/api/bombardier" },
     { "source": "/(.*)", "destination": "/api" }
   ]

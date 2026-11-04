@@ -168,6 +168,11 @@ def main():
     output = pathlib.Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(gzip.compress(encoded, mtime=0))
+    root = pathlib.Path(__file__).resolve().parents[1]
+    if output.resolve() == root / 'data/train-calendar.json.gz':
+        go_copy = root / 'benchmark/assets/train-calendar.json.gz'
+        go_copy.parent.mkdir(parents=True, exist_ok=True)
+        go_copy.write_bytes(output.read_bytes())
     print(json.dumps({**{k: v for k, v in data.items() if k not in {'calendars', 'trains'}},
                       'jsonBytes': len(encoded), 'gzipBytes': output.stat().st_size}, indent=2))
 

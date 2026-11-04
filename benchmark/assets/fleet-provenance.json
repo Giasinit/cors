@@ -1,0 +1,23 @@
+{
+  "source": "https://github.com/codesenberg/bombardier",
+  "commit": "2d495aca5b233bec0a5334dc4aa3cbdaef6e1bc5",
+  "modified": true,
+  "extension": "scripts/bombardier-fleet.go",
+  "extensionSha256": "dd7a5cbeac3edbd38f53eef99ae83abfd69ec996cb9df0dfbba9002310f7705c",
+  "toolchain": "go1.24.0",
+  "CGO_ENABLED": "0",
+  "artifacts": [
+    {
+      "file": "bombardier-fleet-linux-amd64.gz",
+      "sha256": "61a604b34fd961540a855cd933bd9d83fa15aa78ef6c3bcc66b563333c78f2f7",
+      "gzipSha256": "efc0ddda2b922942c6c1ec84658eb1d4758138f12e66d75d71a7cee36ff7382d",
+      "bytes": 10428600
+    },
+    {
+      "file": "bombardier-fleet-linux-arm64.gz",
+      "sha256": "bb7340061e8c16344d1e894c0c0dadd00438ff2202543d573d9c3ae459034171",
+      "gzipSha256": "e989009d509058ed5389f3d2a026d81819222ef56537c280bc0dc7a83c806d6d",
+      "bytes": 9896120
+    }
+  ]
+}

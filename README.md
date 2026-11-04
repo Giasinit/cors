@@ -1,5 +1,55 @@
 # Vercel CORS Proxy
 
+## Calendar + Bombardier: `/gettrain?transport=bombardier`
+
+```text
+https://cors.giaflix.net/gettrain?transport=bombardier&stream=1
+https://cors.giaflix.net/gettrain?transport=bombardier
+https://cors.giaflix.net/gettrain?transport=bombardier&limit=3&diagnostics=1
+```
+
+Vercel routes these requests **directly to the Go Function**, before the Node
+catch-all. `/gettrain-go` is an alias. `/gettrain-go/schedule?limit=3` only lists
+eligible trains and never queries RFI. Existing Node transports remain available
+under their existing URLs; the new transport is explicitly `bombardier`.
+
+This collector embeds the same compiled calendar and ports the existing Node
+selection and compact-response rules. `limit`, `numbers`, `after` (0–1440 min),
+`mode=schedule`, `stream` and `diagnostics` apply. `client=fasthttp` is the default;
+`client=http1` selects the alternative Bombardier engine. Without `limit`, all
+eligible dated train numbers are selected. Eligibility is scheduled activity,
+not proof that every train is actually circulating. No train IDs are fabricated.
+
+The original Bombardier benchmark discards bodies and repeats a single payload.
+The collector therefore uses a **separate, explicitly extended Bombardier binary**:
+the pinned upstream source plus `scripts/bombardier-fleet.go`, with its own hashes
+in `benchmark/assets/fleet-provenance.json`. It reuses upstream's actual
+`newHTTPClient` / `newFastHTTPClient` factories. The extension sends a distinct
+payload per dated train and streams bounded response frames to the Go handler,
+which verifies number/origin date and extracts realtime information.
+
+There is **one subprocess per batch**, not one per train. The executable launches
+one goroutine per selected train with a shared client and no application pool,
+queue, semaphore, retry or concurrency cap. The client allows all selected
+connections; platform/upstream limits still apply. Caller → Vercel Go → extended
+Bombardier → RFI; no Node or second proxy in that path, no forwarded caller data.
+
+JSON retains per-train `rt`, `last`, `checkedAt` and bounded `error` fields.
+The last event's calculated time is an **estimate**, not an observed timestamp.
+SSE emits `start`, `train`, `progress`, `done`; completed trains are flushed before
+slow peers finish. Progress describes a pending collector result, not an inferred
+DNS/TLS/backend phase. A reconnect carrying Last-Event-ID returns 204. HEAD and
+OPTIONS make no lookups. Each request has a 24 s timeout; the batch has a 26 s
+deadline, with per-train timeout rows for missing results. Disconnect kills the
+single executable. Responses over 1 MiB per train are rejected.
+
+The Go/Node calendar copies are audited byte-for-byte. The normal calendar
+compiler updates both copies when writing the default `data/` output. Go tests
+compare calendar and compact semantics against the actual existing Node code,
+and exercise the real extended executable against loopback fixtures. The
+extension's deterministic 1,000-job test proves all jobs can enter before any
+completes; it sends **no RFI requests** and is not a live capacity claim.
+
 ## Bombardier on Vercel, without Node: `/bombardier`
 
 This separate **Go Vercel Function** executes the unmodified upstream Bombardier

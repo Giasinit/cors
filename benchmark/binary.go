@@ -23,6 +23,14 @@ var assets embed.FS
 var binaryOnce sync.Once
 var binaryPath string
 var binaryError error
+var fleetOnce sync.Once
+var fleetPath string
+var fleetError error
+
+func bundledFleetBinary() (string, error) {
+	fleetOnce.Do(func() { fleetPath, fleetError = extractExecutable("bombardier-fleet", "fleet-provenance.json") })
+	return fleetPath, fleetError
+}
 
 func bundledBinary() (string, error) {
 	binaryOnce.Do(func() {
@@ -32,10 +40,14 @@ func bundledBinary() (string, error) {
 }
 
 func extractBinary() (string, error) {
+	return extractExecutable("bombardier", "provenance.json")
+}
+
+func extractExecutable(prefix, manifestName string) (string, error) {
 	if runtime.GOOS != "linux" {
 		return "", fmt.Errorf("bundled Bombardier requires Linux")
 	}
-	name := "bombardier-linux-" + runtime.GOARCH + ".gz"
+	name := prefix + "-linux-" + runtime.GOARCH + ".gz"
 	compressed, err := assets.ReadFile("assets/" + name)
 	if err != nil {
 		return "", err
@@ -43,7 +55,7 @@ func extractBinary() (string, error) {
 	var manifest struct {
 		Artifacts []struct{ File, Sha256 string }
 	}
-	raw, _ := assets.ReadFile("assets/provenance.json")
+	raw, _ := assets.ReadFile("assets/" + manifestName)
 	if err = json.Unmarshal(raw, &manifest); err != nil {
 		return "", err
 	}
