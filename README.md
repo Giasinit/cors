@@ -9,11 +9,13 @@ trains are selected, 1,000 promises start without waiting for earlier responses;
 the HTTPS agent also has unlimited `maxSockets`/`maxTotalSockets`. Platform and
 upstream limits still apply and failures are returned per train.
 
-Every detail lookup is a POST through `https://cors.giaflix.net/?url=…`, not a
-direct RFI connection from the caller. The collector creates fresh outbound
-headers and the generic proxy strips caller-IP/forwarding/platform headers.
-Proxy providers still receive the caller's connection; this is not an anonymity
-or GDPR compliance claim.
+The path is **caller → Vercel `/gettrain` → RFI**. Each lookup is a direct POST
+from the Vercel function to SalaBlu+, with no second CORS proxy/self-request.
+The direct RFI connection uses Vercel's egress IP; the collector creates fresh
+outbound headers and never forwards caller IPs, cookies or auth. The generic
+`?url=…` route separately strips caller-IP/forwarding/platform headers. Local
+live checks call only the deployed `/gettrain` endpoint. Proxy providers still
+receive the caller's connection; this is not an anonymity or GDPR compliance claim.
 
 The bundled calendar is compiled from `IT-IT-TRENITALIA_L1.xml` (publication
 2026-10-29, SHA-256

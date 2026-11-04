@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { test } from 'node:test';
+import https from 'node:https';
+import { EventEmitter } from 'node:events';
+import { Readable } from 'node:stream';
+import { X509Certificate } from 'node:crypto';
+import { mock, test } from 'node:test';
 import { createApp } from '../api/index.js';
 import { prepareCalendar, selectActive } from '../lib/train-calendar.js';
-import { collectTrains, compactTrain, TrainError } from '../lib/train-realtime.js';
+import { collectTrains, compactTrain, fetchTrain, TrainError } from '../lib/train-realtime.js';
 
 const now = new Date('2026-11-04T12:00:00Z');
 const entry = { number: '757', serviceDate: '2026-11-04', originDate: '2026-11-04' };
@@ -24,6 +28,42 @@ function calendar(rows = [['757', 0, 86399, 0]]) {
     publication: '2026-10-29T12:00:00Z', source: { sha256: 'fixture' }, maxEnd: Math.max(...rows.map(r => r[2])),
     calendars: [Buffer.from([7]).toString('base64')], trains: rows });
 }
+
+test('detail transport calls RFI directly with verified TLS, no proxy hop and no caller headers', async () => {
+  let calls = 0;
+  const request = mock.method(https, 'request', (target, options, callback) => {
+    calls++;
+    const url = new URL(target);
+    assert.equal(url.hostname, 'salabluplus.rfi.it');
+    assert.equal(url.port, '8443');
+    assert.equal(url.pathname, '/pic/v2/GetTrainDetailsWtime');
+    assert.equal(url.search, '');
+    assert.equal(options.method, 'POST');
+    assert.equal(options.rejectUnauthorized, true);
+    assert.equal(options.agent.options.rejectUnauthorized, true);
+    assert.equal(options.agent.maxSockets, Infinity);
+    assert.equal(options.agent.maxTotalSockets, Infinity);
+    assert.ok(options.agent.options.ca.some(pem => new X509Certificate(pem).subject
+      .includes('DigiCert Global G2 TLS RSA SHA256 2020 CA1')));
+    assert.deepEqual(Object.keys(options.headers).sort(), ['Content-Length', 'Content-Type']);
+    const req = new EventEmitter();
+    req.end = body => {
+      assert.deepEqual(JSON.parse(body), { trainNumber: '757',
+        timeGMT: '2026-11-04T00:00:00%2B00:00', timeUTC: '2026-11-04T00:00:00.000Z' });
+      queueMicrotask(() => {
+        const response = Readable.from([Buffer.from(JSON.stringify(detail()))]);
+        response.statusCode = 200;
+        callback(response);
+        response.on('end', () => req.emit('close'));
+      });
+    };
+    return req;
+  });
+  try {
+    assert.deepEqual(await fetchTrain(entry, '2026-11-04'), detail());
+    assert.equal(calls, 1);
+  } finally { request.mock.restore(); }
+});
 
 test('calendar honors exact date bits, time window, filtering and duplicate variants', () => {
   const c = calendar([['1', 43200, 50000, 0], ['1', 44000, 50500, 0], ['2', 50001, 60000, 0]]);

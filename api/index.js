@@ -1,16 +1,9 @@
-import { readFileSync } from 'node:fs';
 import { PassThrough } from 'node:stream';
-import { rootCertificates } from 'node:tls';
 import express from 'express';
 import cors from 'cors';
 import request from 'request';
 import { createGetTrain } from '../lib/gettrain.js';
-
-// The server omits its public intermediate. Complete the chain without disabling TLS checks.
-const salaBluAuthorities = [
-  ...rootCertificates,
-  readFileSync(new URL('../certificates/digicert-global-g2-tls-rsa-sha256-2020-ca1.pem', import.meta.url), 'utf8'),
-];
+import { salaBluAuthorities } from '../lib/salablu-tls.js';
 const hopByHop = new Set([
   'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
   'te', 'trailer', 'transfer-encoding', 'upgrade',
