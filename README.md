@@ -128,6 +128,21 @@ null for a direct IP connection, not assumed zero. `bytesReceived`, optional
 `outcome` describes the transport/JSON exchange; a valid exchange can still
 produce a compact-result error such as `TRAIN_NOT_FOUND` or `SERVICE_DATE_MISMATCH`.
 
+For small controlled client comparisons, `transport=native` uses Node's native
+HTTPS client in place of the default `request` library. Endpoint, POST body,
+outbound headers, CA verification, connection-close policy and 24-second deadline
+remain the same. The default remains `transport=request`; this option is an
+experimental diagnostic, not a measured performance improvement. Neither client
+retries or routes its requests through a second proxy.
+
+Diagnostic JSON responses and SSE `done` events include
+`runtime.eventLoopDelayMs`: a 20 ms resolution histogram with sample count, max
+and p99. These are observed event-loop intervals, including the nominal sampling
+resolution; null means no sample. This can expose long Node scheduling stalls
+while awaiting responses, but it is not a server-side RFI measurement or an OS
+packet trace. HTTP timings and this histogram can narrow possible causes, not
+prove which internal RFI component was slow.
+
 A timeout while `response_headers` means the client sent the request but did
 not observe HTTP response headers before the deadline. It does **not** locate
 the delay inside RFI's gateway/database/backend. `response_body` means headers

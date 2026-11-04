@@ -6,6 +6,7 @@ import net from 'node:net';
 import { test } from 'node:test';
 import { createApp } from '../api/index.js';
 import { createTrainLookup } from '../lib/train-realtime.js';
+import { nativePost } from '../lib/native-post.js';
 import { prepareCalendar } from '../lib/train-calendar.js';
 
 // These publicly committed keys belong only to a loopback test server.
@@ -50,7 +51,8 @@ async function* events(body) {
   }
 }
 
-test('real HTTPS → collector → SSE streams fast trains before a stalled peer and diagnoses its timeout', async () => {
+for (const [transport, post] of [['request', undefined], ['native', nativePost]]) {
+test(`real HTTPS → collector → SSE streams fast trains before a stalled peer and diagnoses its timeout [${transport}]`, async () => {
   const waiting = new Map();
   const receivedAll = deferred();
   const upstream = https.createServer({ key, cert }, async (req, res) => {
@@ -65,20 +67,22 @@ test('real HTTPS → collector → SSE streams fast trains before a stalled peer
   });
   const port = await listen(upstream);
   const agent = new https.Agent({ ca: cert, keepAlive: false, maxSockets: Infinity });
-  const lookup = createTrainLookup({ endpoint: `https://127.0.0.1:${port}/detail`, httpsAgent: agent });
+  const lookup = createTrainLookup({ endpoint: `https://127.0.0.1:${port}/detail`, httpsAgent: agent, post });
+  const localLookup = (e, date, options) => lookup(e, date, { ...options, timeoutMs: 2000 });
   const app = http.createServer(createApp({ getTrainOptions: {
     calendar: () => calendar, clock: () => now, progressIntervalMs: 25,
-    lookup: (e, date, options) => lookup(e, date, { ...options, timeoutMs: 2000 }),
+    lookup: localLookup, nativeLookup: localLookup,
   } }));
   const appPort = await listen(app);
   try {
-    const response = await fetch(`http://127.0.0.1:${appPort}/gettrain?stream=1&limit=3`);
+    const response = await fetch(`http://127.0.0.1:${appPort}/gettrain?stream=1&limit=3&transport=${transport}`);
     assert.match(response.headers.get('content-type'), /text\/event-stream/);
     assert.match(response.headers.get('cache-control'), /no-transform/);
     assert.equal(response.headers.get('access-control-allow-origin'), '*');
     const stream = events(response.body);
     const first = (await stream.next()).value;
     assert.equal(first.event, 'start'); assert.equal(first.data.selected, 3);
+    assert.equal(first.data.transport, transport);
     assert.ok(first.id);
     await receivedAll.promise; // All requests started while no upstream has replied.
     waiting.get('2').end(detail('2'));
@@ -112,10 +116,12 @@ test('real HTTPS → collector → SSE streams fast trains before a stalled peer
     assert.equal(observed.at(-1).event, 'done');
     assert.deepEqual(observed.at(-1).data.summary, { realtime: 2, noRealtime: 0, errors: 1 });
     assert.equal(observed.at(-1).data.completed, 3);
+    assert.ok(observed.at(-1).data.runtime.eventLoopDelayMs.samples > 0);
+    assert.ok(Number.isFinite(observed.at(-1).data.runtime.eventLoopDelayMs.max));
   } finally { agent.destroy(); await close(app); await close(upstream); }
 });
 
-test('a stalled response body is distinguished from waiting for response headers', async () => {
+test(`a stalled response body is distinguished from waiting for response headers [${transport}]`, async () => {
   const upstream = https.createServer({ key, cert }, (req, res) => {
     req.resume(); res.writeHead(200, { 'Content-Type': 'application/json' }); res.write('{"Trains":');
   });
@@ -123,7 +129,7 @@ test('a stalled response body is distinguished from waiting for response headers
   const agent = new https.Agent({ ca: cert, keepAlive: false });
   let last;
   try {
-    const lookup = createTrainLookup({ endpoint: `https://127.0.0.1:${port}/`, httpsAgent: agent });
+    const lookup = createTrainLookup({ endpoint: `https://127.0.0.1:${port}/`, httpsAgent: agent, post });
     await assert.rejects(lookup(entry, '2026-11-04', { timeoutMs: 200, onDiagnostic: d => { last = d; } }),
       e => e.code === 'UPSTREAM_TIMEOUT');
     assert.equal(last.phase, 'response_body');
@@ -133,14 +139,14 @@ test('a stalled response body is distinguished from waiting for response headers
   } finally { agent.destroy(); await close(upstream); }
 });
 
-test('a TLS handshake stall is attributed to TLS, not to backend response time', async () => {
+test(`a TLS handshake stall is attributed to TLS, not to backend response time [${transport}]`, async () => {
   const sockets = new Set();
   const upstream = net.createServer(socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
   const port = await listen(upstream);
   const agent = new https.Agent({ ca: cert, keepAlive: false });
   let last;
   try {
-    const lookup = createTrainLookup({ endpoint: `https://127.0.0.1:${port}/`, httpsAgent: agent });
+    const lookup = createTrainLookup({ endpoint: `https://127.0.0.1:${port}/`, httpsAgent: agent, post });
     await assert.rejects(lookup(entry, '2026-11-04', { timeoutMs: 150, onDiagnostic: d => { last = d; } }),
       e => e.code === 'UPSTREAM_TIMEOUT');
     assert.equal(last.phase, 'tls');
@@ -149,13 +155,13 @@ test('a TLS handshake stall is attributed to TLS, not to backend response time',
   } finally { agent.destroy(); for (const s of sockets) s.destroy(); await close(upstream); }
 });
 
-test('certificate verification errors retain their native cause and TLS phase', async () => {
+test(`certificate verification errors retain their native cause and TLS phase [${transport}]`, async () => {
   const upstream = https.createServer({ key, cert }, (req, res) => res.end(detail('1')));
   const port = await listen(upstream);
   const agent = new https.Agent({ keepAlive: false }); // Deliberately does not trust fixture CA.
   let last;
   try {
-    const lookup = createTrainLookup({ endpoint: `https://127.0.0.1:${port}/`, httpsAgent: agent });
+    const lookup = createTrainLookup({ endpoint: `https://127.0.0.1:${port}/`, httpsAgent: agent, post });
     await assert.rejects(lookup(entry, '2026-11-04', { onDiagnostic: d => { last = d; } }),
       e => /CERT|SELF_SIGNED/.test(e.code));
     assert.equal(last.phase, 'tls');
@@ -164,20 +170,20 @@ test('certificate verification errors retain their native cause and TLS phase', 
   } finally { agent.destroy(); await close(upstream); }
 });
 
-test('DNS failure is reported before TCP/TLS without accessing external DNS', async () => {
+test(`DNS failure is reported before TCP/TLS without accessing external DNS [${transport}]`, async () => {
   const agent = new https.Agent({ ca: cert, lookup: (hostname, options, callback) => {
     queueMicrotask(() => callback(Object.assign(new Error('Fixture DNS failure'), { code: 'ENOTFOUND' })));
   } });
   let last;
   try {
-    const lookup = createTrainLookup({ endpoint: 'https://fixture.invalid/detail', httpsAgent: agent });
+    const lookup = createTrainLookup({ endpoint: 'https://fixture.invalid/detail', httpsAgent: agent, post });
     await assert.rejects(lookup(entry, '2026-11-04', { onDiagnostic: d => { last = d; } }), e => e.code === 'ENOTFOUND');
     assert.equal(last.phase, 'dns'); assert.equal(last.causeCode, 'ENOTFOUND');
     assert.equal(last.milestonesMs.tcp, undefined); assert.equal(last.milestonesMs.tls, undefined);
   } finally { agent.destroy(); }
 });
 
-test('completed upstream HTTP and invalid JSON errors keep response diagnostics', async () => {
+test(`completed upstream HTTP and invalid JSON errors keep response diagnostics [${transport}]`, async () => {
   const upstream = https.createServer({ key, cert }, (req, res) => {
     req.resume();
     if (req.url === '/fault') { res.writeHead(500); res.end('<faultstring>Fixture fault</faultstring>'); }
@@ -188,7 +194,7 @@ test('completed upstream HTTP and invalid JSON errors keep response diagnostics'
   try {
     for (const [path, code, status] of [['/fault', 'UPSTREAM_HTTP', 500], ['/json', 'INVALID_RESPONSE', 200]]) {
       let last;
-      const lookup = createTrainLookup({ endpoint: `https://127.0.0.1:${port}${path}`, httpsAgent: agent });
+      const lookup = createTrainLookup({ endpoint: `https://127.0.0.1:${port}${path}`, httpsAgent: agent, post });
       await assert.rejects(lookup(entry, '2026-11-04', { onDiagnostic: d => { last = d; } }), e => e.code === code);
       assert.equal(last.upstreamStatus, status); assert.equal(last.outcome, 'error');
       assert.ok(last.milestonesMs.bodyEnd >= last.milestonesMs.responseHeaders);
@@ -197,14 +203,14 @@ test('completed upstream HTTP and invalid JSON errors keep response diagnostics'
   } finally { agent.destroy(); await close(upstream); }
 });
 
-test('closing SSE aborts the real in-flight upstream socket', async () => {
+test(`closing SSE aborts the real in-flight upstream socket [${transport}]`, async () => {
   const received = deferred(), closed = deferred();
   const upstream = https.createServer({ key, cert }, (req, res) => {
     req.resume(); res.on('close', closed.resolve); received.resolve();
   });
   const port = await listen(upstream);
   const agent = new https.Agent({ ca: cert, keepAlive: false });
-  const lookup = createTrainLookup({ endpoint: `https://127.0.0.1:${port}/`, httpsAgent: agent });
+  const lookup = createTrainLookup({ endpoint: `https://127.0.0.1:${port}/`, httpsAgent: agent, post });
   let last;
   const app = http.createServer(createApp({ getTrainOptions: {
     calendar: () => calendar, clock: () => now,
@@ -224,11 +230,14 @@ test('closing SSE aborts the real in-flight upstream socket', async () => {
   } finally { controller.abort(); agent.destroy(); await close(app); await close(upstream); }
 });
 
+}
+
 test('SSE negotiation, finite-run reconnection, validation and empty batches make no unexpected lookups', async () => {
-  let calls = 0;
+  let calls = 0, nativeCalls = 0;
   const app = http.createServer(createApp({ getTrainOptions: {
     calendar: () => calendar, clock: () => now,
     lookup: async e => { calls++; return JSON.parse(detail(e.number)); },
+    nativeLookup: async e => { nativeCalls++; return JSON.parse(detail(e.number)); },
   } }));
   const port = await listen(app);
   const url = `http://127.0.0.1:${port}/gettrain`;
@@ -240,7 +249,7 @@ test('SSE negotiation, finite-run reconnection, validation and empty batches mak
     const retry = await fetch(url + '?stream=1', { headers: { 'Last-Event-ID': frames[1].id } });
     assert.equal(retry.status, 204);
     assert.equal((await fetch(url + '?stream=1', { method: 'HEAD' })).status, 405);
-    for (const query of ['?stream=2', '?stream=1&mode=schedule', '?diagnostics=yes']) {
+    for (const query of ['?stream=2', '?stream=1&mode=schedule', '?diagnostics=yes', '?transport=invalid']) {
       assert.equal((await fetch(url + query)).status, 400);
     }
     assert.equal(calls, 0);
@@ -250,5 +259,7 @@ test('SSE negotiation, finite-run reconnection, validation and empty batches mak
     assert.ok(diagnostic.trains[0].diagnostics.elapsedMs >= 0);
     assert.equal(diagnostic.trains[0].diagnostics.phase, 'unknown');
     assert.equal(calls, 2);
+    const native = await (await fetch(url + '?limit=1&diagnostics=1&transport=native')).json();
+    assert.equal(native.transport, 'native'); assert.equal(nativeCalls, 1); assert.equal(calls, 2);
   } finally { await close(app); }
 });
