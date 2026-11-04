@@ -38,6 +38,7 @@ test('detail transport calls RFI directly with verified TLS, no proxy hop and no
     assert.equal(url.pathname, '/pic/v2/GetTrainDetailsWtime');
     assert.equal(url.search, '');
     assert.equal(options.strictSSL, true);
+    assert.equal(options.proxy, false);
     assert.equal(options.agent.options.rejectUnauthorized, true);
     assert.equal(options.agent.maxSockets, Infinity);
     assert.equal(options.agent.maxTotalSockets, Infinity);

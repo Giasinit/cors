@@ -133,7 +133,12 @@ HTTPS client in place of the default `request` library. Endpoint, POST body,
 outbound headers, CA verification, connection-close policy and 24-second deadline
 remain the same. The default remains `transport=request`; this option is an
 experimental diagnostic, not a measured performance improvement. Neither client
-retries or routes its requests through a second proxy.
+retries or routes its requests through a second proxy. `request` explicitly
+disables environment-proxy discovery; native uses the configured direct HTTPS
+agent. Native also matches request's lowercase `host` wire-header spelling for
+controlled comparisons. Diagnostic runtime data reports only whether proxy
+environment variables are present (never their values), separately from the
+client's disabled outbound-proxy setting.
 
 Diagnostic JSON responses and SSE `done` events include
 `runtime.eventLoopDelayMs`: a 20 ms resolution histogram with sample count, max

@@ -232,6 +232,24 @@ test(`closing SSE aborts the real in-flight upstream socket [${transport}]`, asy
 
 }
 
+test('both clients send identical HTTP request fields and body to the HTTPS peer', async () => {
+  const captures = [];
+  const upstream = https.createServer({ key, cert }, async (req, res) => {
+    const chunks = []; for await (const chunk of req) chunks.push(chunk);
+    captures.push({ method: req.method, url: req.url, httpVersion: req.httpVersion,
+      rawHeaders: req.rawHeaders, body: Buffer.concat(chunks).toString('utf8') });
+    res.end(detail('1'));
+  });
+  const port = await listen(upstream);
+  const agent = new https.Agent({ ca: cert, keepAlive: false });
+  try {
+    for (const post of [undefined, nativePost]) {
+      await createTrainLookup({ endpoint: `https://127.0.0.1:${port}/detail`, httpsAgent: agent, post })(entry, '2026-11-04');
+    }
+    assert.deepEqual(captures[0], captures[1]);
+  } finally { agent.destroy(); await close(upstream); }
+});
+
 test('SSE negotiation, finite-run reconnection, validation and empty batches make no unexpected lookups', async () => {
   let calls = 0, nativeCalls = 0;
   const app = http.createServer(createApp({ getTrainOptions: {
