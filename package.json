@@ -9,6 +9,7 @@
   "author": "Bengt Brodersen",
   "license": "MIT",
   "scripts": {
+    "postinstall": "node scripts/prepare-go-build.js",
     "start": "vercel dev",
     "test": "node --test",
     "build:calendar": "python3 scripts/compile_calendar.py"
