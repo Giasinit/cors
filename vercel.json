@@ -1,11 +1,15 @@
 { 
   "functions": {
+    "api/bombardier.go": {
+      "maxDuration": 30
+    },
     "api/index.js": {
       "maxDuration": 30,
       "includeFiles": "{certificates/*.pem,data/*.json.gz}"
     }
   },
   "rewrites": [
+    { "source": "/bombardier", "destination": "/api/bombardier" },
     { "source": "/(.*)", "destination": "/api" }
   ]
 }

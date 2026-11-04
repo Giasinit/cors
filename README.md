@@ -1,5 +1,57 @@
 # Vercel CORS Proxy
 
+## Bombardier on Vercel, without Node: `/bombardier`
+
+This separate **Go Vercel Function** executes the unmodified upstream Bombardier
+binary, pinned to `2d495aca5b233bec0a5334dc4aa3cbdaef6e1bc5`. Its outbound path is
+**caller → Vercel Go → Bombardier Go executable → RFI**: neither the Node handler
+nor the generic proxy runs on this path. `/gettrain` keeps its existing behavior.
+
+```text
+/bombardier?mode=info                         # Executes --version; zero RFI calls
+/bombardier?number=3496&c=1                   # One POST, today's Rome query date
+/bombardier?number=3496&c=3&client=http1       # Three simultaneous POSTs
+/bombardier?number=3496&c=3&client=fasthttp    # Alternative Bombardier client
+```
+
+`date=YYYY-MM-DD` overrides the query date. `c` defaults to 1 and accepts 1–20;
+each invocation issues exactly `c` requests with `c` workers to the **same train**,
+not to `c` different trains. There is no duration loop, automatic polling or
+request to another proxy. The only target is the fixed SalaBlu+ detail POST;
+arbitrary URLs, CLI flags and incoming credentials/headers are not accepted.
+HEAD returns 405 without running a process. OPTIONS makes no upstream request.
+
+The body is the same `trainNumber`/`timeGMT`/`timeUTC` shape used by `/gettrain`.
+Both engines use HTTP/1.1 here. `keepalive=0` (default) sends `Connection: close`,
+matching the current Node collector; `keepalive=1` permits reuse, but a single
+wave with one request per worker does **not** establish warm-connection savings.
+Bombardier uses its own HTTP serialization/default headers; this is not an
+assertion of byte-identical requests across clients.
+
+TLS certificate/hostname verification remains enabled. The missing public RFI
+intermediate is supplied through Go's Linux `SSL_CERT_FILE`; normal system CA
+directories remain available. Outbound proxy environment variables are removed.
+No caller identity, cookies, tokens or auth are forwarded. Only Vercel contacts
+RFI. Request timeout is 24 s; the executable has a 26 s absolute deadline and
+is killed if the caller disconnects. Each run uses private temporary files,
+cleans them, bounds captured output and prints no per-request server logs.
+
+The response includes `runtime: "go"`, engine/revision, `summary` with HTTP
+status categories, transport errors and **milliseconds** for latency, plus the
+original Bombardier JSON under `result` (whose raw latency unit is microseconds).
+HTTP 200 means the benchmark ran: inspect `summary.http2xx`, `http5xx`,
+`transportErrors` and `result.result.errors`. Bombardier **discards bodies**;
+HTTP success does not verify train identity, realtime correctness or freshness.
+This endpoint measures repeated requests for one train, not national collection.
+
+Rebuild the bundled, checksum-verified Linux amd64/arm64 executables with
+`python3 scripts/build_bombardier.py` (requires Git, Go and network access to
+GitHub/Go dependencies). This also builds `.vercel/bombardier-local` for local
+integration tests. Source revision, toolchain, hashes and upstream MIT license
+are in `internal/bombardier/assets/`. The root Go module is standard-library only.
+Run `go test -count=1 ./...` after rebuilding to exercise the **real executable**
+against loopback HTTP/TLS fixtures, without contacting RFI.
+
 `GET /rfi-protocol` performs one verified TLS handshake from Vercel to the fixed
 SalaBlu+ host on port 8443, offering ALPN `h2` and `http/1.1`. It returns the
 negotiated protocol (null if none), with an eight-second deadline, and closes

@@ -1,0 +1,21 @@
+{
+  "source": "https://github.com/codesenberg/bombardier",
+  "commit": "2d495aca5b233bec0a5334dc4aa3cbdaef6e1bc5",
+  "modified": false,
+  "toolchain": "go1.24.0",
+  "CGO_ENABLED": "0",
+  "artifacts": [
+    {
+      "file": "bombardier-linux-amd64.gz",
+      "sha256": "1da3771b9ba8c67a346764583f6f91345b70cc9bb9838ed633f062c81170dc55",
+      "gzipSha256": "90a6ee6b66f807d4afb7b7b238495698d8a7ac8efecc35909a9f94a202284e62",
+      "bytes": 10195128
+    },
+    {
+      "file": "bombardier-linux-arm64.gz",
+      "sha256": "3e5f4eb064717a2d2e8c7bca215d1844deddb0a85a4b43985fa600e0b1283a03",
+      "gzipSha256": "19c0dad8d30d1922f49f5a04c88a2e8be49d62a2fe322c9e9ed974047afa42ef",
+      "bytes": 9699512
+    }
+  ]
+}
